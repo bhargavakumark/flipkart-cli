@@ -200,6 +200,7 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	infofGreen("Gift card %s linked successfully", cardNumber)
 	return nil
 }
 
