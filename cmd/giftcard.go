@@ -148,21 +148,6 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to save gift card history: %v\n", saveErr)
 	}
 
-	// Print result — always to stdout, not gated by quiet flag
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		fmt.Printf("✓  Gift card linked (HTTP %d)\n", resp.StatusCode)
-	} else {
-		fmt.Printf("✗  Gift card link failed (HTTP %d)\n", resp.StatusCode)
-	}
-
-	// Pretty-print JSON response
-	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, respBody, "", "  "); err != nil {
-		fmt.Println(string(respBody))
-	} else {
-		fmt.Println(pretty.String())
-	}
-
 	// Non-2xx -> error exit code so scripts can detect failure
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("API returned HTTP %d", resp.StatusCode)
