@@ -469,34 +469,14 @@ func extractCards(raw json.RawMessage) ([]giftcardInfo, error) {
 
 // printGiftcardTable formats and prints gift cards in a readable table.
 func printGiftcardTable(cards []giftcardInfo) {
-	// Currency label helper
-	currencyLabel := func(code string) string {
-		switch strings.ToUpper(code) {
-		case "INR", "IN":
-			return ""
-		case "USD":
-			return "USD "
-		case "EUR":
-			return "EUR "
-		case "GBP":
-			return "GBP "
-		default:
-			return code + " "
-		}
-	}
-
-	// Determine max widths for alignment
+	// Balance column fixed at 7 chars (fits upto 9,999,999)
+	const balWidth = 7
 	maxCard := len("Card Number")
-	maxBal := len("Balance")
 	maxExp := len("Expires")
 	for _, c := range cards {
 		n := len(maskCardDisplay(c.CardNumber))
 		if n > maxCard {
 			maxCard = n
-		}
-		b := len(fmt.Sprintf("%.0f", c.effectiveBalance()))
-		if b > maxBal {
-			maxBal = b
 		}
 		e := len(shortDate(c.effectiveExpiry()))
 		if e > maxExp {
@@ -505,20 +485,19 @@ func printGiftcardTable(cards []giftcardInfo) {
 	}
 
 	// Header
-	fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, "Card Number", maxBal+4, "Balance", maxExp, "Expires", "Status")
+	fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, "Card Number", balWidth, "Balance", maxExp, "Expires", "Status")
 	fmt.Printf("  %s  %s  %s  %s\n",
 		strings.Repeat("-", maxCard),
-		strings.Repeat("-", maxBal+4),
+		strings.Repeat("-", balWidth),
 		strings.Repeat("-", maxExp),
 		strings.Repeat("-", 10))
 
 	for _, c := range cards {
-		sym := currencyLabel(c.Currency)
 		cardStr := maskCardDisplay(c.CardNumber)
-		balanceStr := fmt.Sprintf("%s%.0f", sym, c.effectiveBalance())
+		balanceStr := fmt.Sprintf("%.0f", c.effectiveBalance())
 		expiryStr := shortDate(c.effectiveExpiry())
 		statusStr := cardStatus(c)
-		fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, cardStr, maxBal+4, balanceStr, maxExp, expiryStr, statusStr)
+		fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, cardStr, balWidth, balanceStr, maxExp, expiryStr, statusStr)
 	}
 }
 
