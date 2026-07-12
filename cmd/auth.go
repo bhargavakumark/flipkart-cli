@@ -160,9 +160,6 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Config saved: %s\n", config.ConfigPath())
 	fmt.Printf("  at:           %s\n", config.MaskString(fkCfg.CookieAT))
 	fmt.Printf("  User-Agent:   %s\n", fkCfg.UserAgent)
-	fmt.Println()
-	fmt.Println("Run 'flipkart-cli auth show' to see full config.")
-	fmt.Println("Run 'flipkart-cli giftcard add --card-number <num> --card-pin <pin>' to link a gift card.")
 
 	return nil
 }
