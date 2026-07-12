@@ -82,22 +82,26 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 		fmt.Println("  3. Right-click the request → Copy → Copy as cURL")
 		fmt.Println("     OR copy the Cookie header value")
 		fmt.Println()
-		fmt.Print("Paste Cookie header (or full cURL command), then press Ctrl+D when done:\n\n")
+		fmt.Print("Paste Cookie header (or full cURL command), then press Enter twice:\n\n")
 
-		// Read multi-line paste — keep reading until EOF (Ctrl+D) or blank line
+		// Read multi-line paste. cURL lines end with \ (continuation) or are blank.
+		// Stop when we hit a non-blank line that doesn't end with \ — that's the last line.
 		var lines []string
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				// EOF (Ctrl+D) — we're done
+				break // EOF (Ctrl+D)
+			}
+			stripped := strings.TrimRight(line, "\n\r")
+			if stripped == "" {
+				// Blank line — end of paste (second Enter)
 				break
 			}
-			line = strings.TrimSpace(line)
-			if line == "" {
-				// Blank line signals end of paste
+			lines = append(lines, stripped)
+			// If this line doesn't end with \, it's the last line of the cURL command
+			if !strings.HasSuffix(strings.TrimSpace(stripped), "\\") {
 				break
 			}
-			lines = append(lines, line)
 		}
 		input := strings.Join(lines, "\n")
 
