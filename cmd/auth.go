@@ -68,7 +68,15 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 		fkCfg = &config.Config{}
 	}
 
+	// Track whether this run actually parsed key values (vs loading from old config)
+	hadCookieHeader := false
+	hadAT := false
+
 	if flagCookieString != "" {
+		hadCookieHeader = true
+		if strings.Contains(flagCookieString, "at=") {
+			hadAT = true
+		}
 		parseCookies(flagCookieString, fkCfg)
 	} else {
 		// Must be piped — refuse to run interactively
@@ -106,6 +114,10 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 
 			switch key {
 			case "Cookie", "cookie":
+				hadCookieHeader = true
+				if strings.Contains(value, "at=") {
+					hadAT = true
+				}
 				parseCookies(value, fkCfg)
 			case "User-Agent":
 				fkCfg.UserAgent = value
@@ -115,6 +127,14 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 				fkCfg.Origin = value
 			}
 		}
+	}
+
+	// Validate based on what this run actually parsed (not old config values)
+	if !hadCookieHeader {
+		return fmt.Errorf("no Cookie: header found in input — paste the full request headers from DevTools (Copy → Copy Request Headers)")
+	}
+	if !hadAT {
+		return fmt.Errorf("'at' cookie not found in the Cookie header — expected a cookie named 'at' with the access token JWT")
 	}
 
 	// Fill in defaults for anything not provided
