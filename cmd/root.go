@@ -23,6 +23,8 @@ Authentication is stored in ~/.config/flipkart-cli/config.json
 Examples:
   flipkart-cli auth setup
   flipkart-cli auth show
+  flipkart-cli giftcard list
+  flipkart-cli giftcard add --card-number 6000170910944181 --card-pin 149232
   flipkart-cli giftcard add --card-number 6000170910944181 --card-pin 149232
 `,
 }
