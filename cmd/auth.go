@@ -71,6 +71,12 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 	if flagCookieString != "" {
 		parseCookies(flagCookieString, fkCfg)
 	} else {
+		// Must be piped — refuse to run interactively
+		fi, _ := os.Stdin.Stat()
+		if (fi.Mode() & os.ModeCharDevice) != 0 {
+			return fmt.Errorf("auth setup reads headers from pipe — use:\n  echo \"Cookie: T=...; at=...\" | flipkart-cli auth setup")
+		}
+
 		// Read all piped input from stdin (reads until EOF — pipe closes)
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
