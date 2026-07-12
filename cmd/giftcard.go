@@ -473,7 +473,7 @@ func extractCards(raw json.RawMessage) ([]giftcardInfo, error) {
 func printGiftcardTable(cards []giftcardInfo) {
 	// Balance and Original columns fixed at 7 chars (fits upto 9,999,999)
 	const balWidth = 7
-	const origWidth = 7
+	const origWidth = 8
 	maxCard := len("Card Number")
 	maxExp := len("Expires")
 	for _, c := range cards {
