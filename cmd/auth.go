@@ -20,16 +20,16 @@ var authCmd = &cobra.Command{
 var authSetupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure Flipkart session cookies interactively",
-	Long: `Configure Flipkart session cookies interactively or via flags.
+	Long: `Configure Flipkart session cookies from your browser session.
 
-Without flags: prompts for each cookie value.
-With --cookie-string: parses a raw Cookie header to extract all values.
+Interactive mode (no flags):
+  Paste the raw request headers from DevTools.
+  After signing into Flipkart, open DevTools → Network → click any
+  request to 1.rome.api.flipkart.com → right-click → Copy Request Headers.
+  Then paste and press Enter twice.
 
-After signing into Flipkart in your browser:
-1. Open Developer Tools → Network tab
-2. Find any request to 1.rome.api.flipkart.com
-3. Copy the Cookie header from the request headers
-4. Run: flipkart-cli auth setup --cookie-string "T=...; at=...; ..."
+Non-interactive mode (--cookie-string):
+  flipkart-cli auth setup --cookie-string "T=...; at=...; ..."
 
 Examples:
   flipkart-cli auth setup
@@ -54,7 +54,7 @@ func init() {
 	authCmd.AddCommand(authShowCmd)
 
 	authSetupCmd.Flags().StringVar(&flagCookieString, "cookie-string", "",
-		"Raw Cookie header string to parse (non-interactive)")
+		"Cookie header value to parse directly (non-interactive)")
 	authSetupCmd.Flags().StringVar(&flagUserAgent, "user-agent", "",
 		"User-Agent header value (default: Mozilla/5.0 ... Firefox/152.0)")
 }
@@ -72,20 +72,19 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 		// Non-interactive: parse the cookie string
 		parseCookies(flagCookieString, fkCfg)
 	} else {
-		// Interactive mode — paste cookie string
+		// Interactive mode — paste request headers
 		fmt.Println("Flipkart Auth Setup")
 		fmt.Println("───────────────────")
 		fmt.Println()
 		fmt.Println("After signing into Flipkart in your browser:")
 		fmt.Println("  1. Open Developer Tools → Network tab")
 		fmt.Println("  2. Find a request to 1.rome.api.flipkart.com")
-		fmt.Println("  3. Right-click the request → Copy → Copy as cURL")
-		fmt.Println("     OR copy the Cookie header value")
+		fmt.Println("  3. Right-click the request header (not the whole cURL)")
+		fmt.Println("     → Copy → Copy Request Headers")
 		fmt.Println()
-		fmt.Print("Paste Cookie header (or full cURL command), then press Enter twice:\n\n")
+		fmt.Print("Paste the request headers, then press Enter twice:\n\n")
 
-		// Read multi-line paste. cURL lines end with \ (continuation) or are blank.
-		// Stop when we hit a non-blank line that doesn't end with \ — that's the last line.
+		// Read all lines until blank line (double Enter = end of paste)
 		var lines []string
 		for {
 			line, err := reader.ReadString('\n')
@@ -94,26 +93,38 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 			}
 			stripped := strings.TrimRight(line, "\n\r")
 			if stripped == "" {
-				// Blank line — end of paste (second Enter)
-				break
+				break // blank line → end of paste
 			}
 			lines = append(lines, stripped)
-			// If this line doesn't end with \, it's the last line of the cURL command
-			if !strings.HasSuffix(strings.TrimSpace(stripped), "\\") {
-				break
-			}
 		}
-		input := strings.Join(lines, "\n")
 
-		if strings.Contains(input, "-H 'Cookie:") || strings.Contains(input, `-H "Cookie:`) {
-			// Looks like a cURL command — extract Cookie value
-			cookieVal := extractCookieFromCurl(input)
-			if cookieVal != "" {
-				parseCookies(cookieVal, fkCfg)
+		// Parse headers as Key: Value pairs
+		for _, line := range lines {
+			// Skip the request line (GET /api/... HTTP/1.1)
+			if strings.HasPrefix(line, "GET ") || strings.HasPrefix(line, "POST ") ||
+				strings.HasPrefix(line, "PUT ") || strings.HasPrefix(line, "DELETE ") ||
+				strings.HasPrefix(line, "PATCH ") || strings.HasPrefix(line, "OPTIONS ") ||
+				strings.HasPrefix(line, "HEAD ") {
+				continue
 			}
-		} else {
-			// Single cookie header line — just parse directly
-			parseCookies(input, fkCfg)
+
+			idx := strings.Index(line, ":")
+			if idx < 0 {
+				continue
+			}
+			key := strings.TrimSpace(line[:idx])
+			value := strings.TrimSpace(line[idx+1:])
+
+			switch key {
+			case "Cookie":
+				parseCookies(value, fkCfg)
+			case "User-Agent":
+				fkCfg.UserAgent = value
+			case "Referer":
+				fkCfg.Referer = value
+			case "Origin":
+				fkCfg.Origin = value
+			}
 		}
 	}
 
@@ -181,31 +192,6 @@ func parseCookies(cookieStr string, cfg *config.Config) {
 	if len(extra) > 0 {
 		cfg.CookieExtra = strings.Join(extra, "; ")
 	}
-}
-
-// extractCookieFromCurl attempts to extract the Cookie header value from a cURL command.
-func extractCookieFromCurl(curl string) string {
-	// Look for -H 'Cookie: ...' or -H "Cookie: ..."
-	markers := []string{"-H 'Cookie: ", "-H \"Cookie: "}
-	for _, marker := range markers {
-		start := strings.Index(curl, marker)
-		if start < 0 {
-			continue
-		}
-		start += len(marker)
-
-		// Find the closing quote
-		endQuote := "'"
-		if marker[4] == '"' {
-			endQuote = "\""
-		}
-		end := strings.Index(curl[start:], endQuote)
-		if end < 0 {
-			continue
-		}
-		return curl[start : start+end]
-	}
-	return ""
 }
 
 func runAuthShow(cmd *cobra.Command, args []string) error {
