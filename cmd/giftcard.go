@@ -469,17 +469,17 @@ func extractCards(raw json.RawMessage) ([]giftcardInfo, error) {
 
 // printGiftcardTable formats and prints gift cards in a readable table.
 func printGiftcardTable(cards []giftcardInfo) {
-	// Currency symbol helper
-	currencySymbol := func(code string) string {
+	// Currency label helper
+	currencyLabel := func(code string) string {
 		switch strings.ToUpper(code) {
 		case "INR", "IN":
-			return "\u20B9"
+			return ""
 		case "USD":
-			return "$"
+			return "USD "
 		case "EUR":
-			return "\u20AC"
+			return "EUR "
 		case "GBP":
-			return "\u00A3"
+			return "GBP "
 		default:
 			return code + " "
 		}
@@ -494,7 +494,7 @@ func printGiftcardTable(cards []giftcardInfo) {
 		if n > maxCard {
 			maxCard = n
 		}
-		b := len(fmt.Sprintf("%.2f", c.effectiveBalance()))
+		b := len(fmt.Sprintf("%.0f", c.effectiveBalance()))
 		if b > maxBal {
 			maxBal = b
 		}
@@ -507,28 +507,24 @@ func printGiftcardTable(cards []giftcardInfo) {
 	// Header
 	fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, "Card Number", maxBal+4, "Balance", maxExp, "Expires", "Status")
 	fmt.Printf("  %s  %s  %s  %s\n",
-		strings.Repeat("\u2500", maxCard),
-		strings.Repeat("\u2500", maxBal+4),
-		strings.Repeat("\u2500", maxExp),
-		strings.Repeat("\u2500", 10))
+		strings.Repeat("-", maxCard),
+		strings.Repeat("-", maxBal+4),
+		strings.Repeat("-", maxExp),
+		strings.Repeat("-", 10))
 
 	for _, c := range cards {
-		sym := currencySymbol(c.Currency)
+		sym := currencyLabel(c.Currency)
 		cardStr := maskCardDisplay(c.CardNumber)
-		balanceStr := fmt.Sprintf("%s%.2f", sym, c.effectiveBalance())
+		balanceStr := fmt.Sprintf("%s%.0f", sym, c.effectiveBalance())
 		expiryStr := shortDate(c.effectiveExpiry())
 		statusStr := cardStatus(c)
 		fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, cardStr, maxBal+4, balanceStr, maxExp, expiryStr, statusStr)
 	}
 }
 
-// maskCardDisplay masks all but the last 4 digits of a card number.
+// maskCardDisplay formats a card number for display.
 func maskCardDisplay(num string) string {
-	n := strings.TrimSpace(num)
-	if len(n) <= 4 {
-		return n
-	}
-	return strings.Repeat("\u2022", len(n)-4) + n[len(n)-4:]
+	return strings.TrimSpace(num)
 }
 
 // shortDate normalises various date formats to YYYY-MM-DD.
