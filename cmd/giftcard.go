@@ -288,15 +288,16 @@ func runGiftcardList(cmd *cobra.Command, args []string) error {
 
 // giftcardInfo represents a single gift card from the API.
 type giftcardInfo struct {
-	CardNumber    string  `json:"cardNumber"`
-	Balance       float64 `json:"balance"`
-	BalanceAmount float64 `json:"balanceAmount"`
-	Currency      string  `json:"currency"`
-	ExpiryDate    string  `json:"expiryDate"`
-	Expiry        string  `json:"expiry"`
-	IsExpired     bool    `json:"isExpired"`
-	Name          string  `json:"name"`
-	Status        string  `json:"status"`
+	CardNumber     string  `json:"cardNumber"`
+	Balance        float64 `json:"balance"`
+	BalanceAmount  float64 `json:"balanceAmount"`
+	OriginalAmount float64 `json:"originalAmount"`
+	Currency       string  `json:"currency"`
+	ExpiryDate     string  `json:"expiryDate"`
+	Expiry         string  `json:"expiry"`
+	IsExpired      bool    `json:"isExpired"`
+	Name           string  `json:"name"`
+	Status         string  `json:"status"`
 }
 
 // effectiveBalance returns whichever balance field is populated.
@@ -433,10 +434,11 @@ func unwrapGiftCardDetails(val interface{}) []giftcardInfo {
 	cards := make([]giftcardInfo, 0, len(details))
 	for _, d := range details {
 		cards = append(cards, giftcardInfo{
-			CardNumber:    d.GiftCard.CardNumber,
-			BalanceAmount: d.GiftCard.BalanceAmount,
-			ExpiryDate:    d.GiftCard.ExpiryDate,
-			Name:          d.GiftCard.CardNumber,
+			CardNumber:     d.GiftCard.CardNumber,
+			BalanceAmount:  d.GiftCard.BalanceAmount,
+			OriginalAmount: d.GiftCard.OriginalAmount,
+			ExpiryDate:     d.GiftCard.ExpiryDate,
+			Name:           d.GiftCard.CardNumber,
 		})
 	}
 	return cards
@@ -469,8 +471,9 @@ func extractCards(raw json.RawMessage) ([]giftcardInfo, error) {
 
 // printGiftcardTable formats and prints gift cards in a readable table.
 func printGiftcardTable(cards []giftcardInfo) {
-	// Balance column fixed at 7 chars (fits upto 9,999,999)
+	// Balance and Original columns fixed at 7 chars (fits upto 9,999,999)
 	const balWidth = 7
+	const origWidth = 7
 	maxCard := len("Card Number")
 	maxExp := len("Expires")
 	for _, c := range cards {
@@ -485,19 +488,21 @@ func printGiftcardTable(cards []giftcardInfo) {
 	}
 
 	// Header
-	fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, "Card Number", balWidth, "Balance", maxExp, "Expires", "Status")
-	fmt.Printf("  %s  %s  %s  %s\n",
+	fmt.Printf("  %-*s  %*s  %*s  %-*s  %s\n", maxCard, "Card Number", balWidth, "Balance", origWidth, "Original", maxExp, "Expires", "Status")
+	fmt.Printf("  %s  %s  %s  %s  %s\n",
 		strings.Repeat("-", maxCard),
 		strings.Repeat("-", balWidth),
+		strings.Repeat("-", origWidth),
 		strings.Repeat("-", maxExp),
 		strings.Repeat("-", 10))
 
 	for _, c := range cards {
 		cardStr := maskCardDisplay(c.CardNumber)
 		balanceStr := fmt.Sprintf("%.0f", c.effectiveBalance())
+		origStr := fmt.Sprintf("%.0f", c.OriginalAmount)
 		expiryStr := shortDate(c.effectiveExpiry())
 		statusStr := cardStatus(c)
-		fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, cardStr, balWidth, balanceStr, maxExp, expiryStr, statusStr)
+		fmt.Printf("  %-*s  %*s  %*s  %-*s  %s\n", maxCard, cardStr, balWidth, balanceStr, origWidth, origStr, maxExp, expiryStr, statusStr)
 	}
 }
 
