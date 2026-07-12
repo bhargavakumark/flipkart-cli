@@ -4,3 +4,4 @@
 *.test
 *.out
 __debug_bin
+.pi
