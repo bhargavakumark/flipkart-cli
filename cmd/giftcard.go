@@ -288,14 +288,46 @@ func runGiftcardList(cmd *cobra.Command, args []string) error {
 
 // giftcardInfo represents a single gift card from the API.
 type giftcardInfo struct {
-	CardNumber string  `json:"cardNumber"`
-	Balance    float64 `json:"balance"`
-	Currency   string  `json:"currency"`
-	ExpiryDate string  `json:"expiryDate"`
-	Expiry     string  `json:"expiry"`
-	IsExpired  bool    `json:"isExpired"`
-	Name       string  `json:"name"`
-	Status     string  `json:"status"`
+	CardNumber    string  `json:"cardNumber"`
+	Balance       float64 `json:"balance"`
+	BalanceAmount float64 `json:"balanceAmount"`
+	Currency      string  `json:"currency"`
+	ExpiryDate    string  `json:"expiryDate"`
+	Expiry        string  `json:"expiry"`
+	IsExpired     bool    `json:"isExpired"`
+	Name          string  `json:"name"`
+	Status        string  `json:"status"`
+}
+
+// effectiveBalance returns whichever balance field is populated.
+func (g *giftcardInfo) effectiveBalance() float64 {
+	if g.BalanceAmount != 0 {
+		return g.BalanceAmount
+	}
+	return g.Balance
+}
+
+// effectiveExpiry returns whichever expiry field is populated.
+func (g *giftcardInfo) effectiveExpiry() string {
+	if g.ExpiryDate != "" {
+		return g.ExpiryDate
+	}
+	return g.Expiry
+}
+
+// giftCardDetail is the wrapper struct for the API response (RESPONSE.giftCardDetails[].giftCard).
+type giftCardDetail struct {
+	GiftCard struct {
+		CardNumber      string  `json:"cardNumber"`
+		BalanceAmount   float64 `json:"balanceAmount"`
+		ExpiryDate      string  `json:"expiryDate"`
+		OriginalAmount  float64 `json:"originalAmount"`
+		TransferAllowed bool    `json:"transferAllowed"`
+	} `json:"giftCard"`
+	ID        string `json:"id"`
+	EmailID   string `json:"emailId"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
 }
 
 // parseGiftcards extracts gift cards from various response shapes.
@@ -353,11 +385,28 @@ func parseGiftcards(body []byte) ([]giftcardInfo, error) {
 	// Try looking for known fields in the top-level response
 	var rawMap map[string]interface{}
 	if err := json.Unmarshal(body, &rawMap); err == nil {
-		for _, key := range []string{"giftCards", "cards", "list", "items", "vouchers", "egv"} {
+		// First try keys that may hold wrapped giftCardDetails
+		for _, key := range []string{"giftCardDetails", "giftCards", "cards", "list", "items", "vouchers", "egv"} {
 			if val, ok := rawMap[key]; ok {
+				cards := unwrapGiftCardDetails(val)
+				if len(cards) > 0 {
+					return cards, nil
+				}
 				data, err := json.Marshal(val)
 				if err == nil {
 					cards, err := extractCards(data)
+					if err == nil && len(cards) > 0 {
+						return cards, nil
+					}
+				}
+			}
+		}
+		// Try navigating through wrapper keys like RESPONSE
+		for _, key := range []string{"RESPONSE", "data", "result"} {
+			if val, ok := rawMap[key]; ok {
+				data, err := json.Marshal(val)
+				if err == nil {
+					cards, err := parseGiftcards(data)
 					if err == nil && len(cards) > 0 {
 						return cards, nil
 					}
@@ -368,6 +417,29 @@ func parseGiftcards(body []byte) ([]giftcardInfo, error) {
 
 	// If we got here with data but no cards, return empty
 	return []giftcardInfo{}, nil
+}
+
+// unwrapGiftCardDetails tries to unmarshal a value as an array of giftCardDetail
+// and extract the inner giftCard fields into giftcardInfo.
+func unwrapGiftCardDetails(val interface{}) []giftcardInfo {
+	data, err := json.Marshal(val)
+	if err != nil {
+		return nil
+	}
+	var details []giftCardDetail
+	if err := json.Unmarshal(data, &details); err != nil || len(details) == 0 {
+		return nil
+	}
+	cards := make([]giftcardInfo, 0, len(details))
+	for _, d := range details {
+		cards = append(cards, giftcardInfo{
+			CardNumber:    d.GiftCard.CardNumber,
+			BalanceAmount: d.GiftCard.BalanceAmount,
+			ExpiryDate:    d.GiftCard.ExpiryDate,
+			Name:          d.GiftCard.CardNumber,
+		})
+	}
+	return cards
 }
 
 // extractCards tries to unmarshal raw JSON as an array of giftcardInfo.
@@ -422,11 +494,11 @@ func printGiftcardTable(cards []giftcardInfo) {
 		if n > maxCard {
 			maxCard = n
 		}
-		b := len(fmt.Sprintf("%.2f", c.Balance))
+		b := len(fmt.Sprintf("%.2f", c.effectiveBalance()))
 		if b > maxBal {
 			maxBal = b
 		}
-		e := len(shortDate(c.Expiry))
+		e := len(shortDate(c.effectiveExpiry()))
 		if e > maxExp {
 			maxExp = e
 		}
@@ -443,8 +515,8 @@ func printGiftcardTable(cards []giftcardInfo) {
 	for _, c := range cards {
 		sym := currencySymbol(c.Currency)
 		cardStr := maskCardDisplay(c.CardNumber)
-		balanceStr := fmt.Sprintf("%s%.2f", sym, c.Balance)
-		expiryStr := shortDate(c.Expiry)
+		balanceStr := fmt.Sprintf("%s%.2f", sym, c.effectiveBalance())
+		expiryStr := shortDate(c.effectiveExpiry())
 		statusStr := cardStatus(c)
 		fmt.Printf("  %-*s  %*s  %-*s  %s\n", maxCard, cardStr, maxBal+4, balanceStr, maxExp, expiryStr, statusStr)
 	}
@@ -471,6 +543,8 @@ func shortDate(s string) string {
 		time.RFC3339Nano,
 		"2006-01-02T15:04:05Z",
 		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05.000",
+		"2006-01-02 15:04:05",
 		"2006-01-02",
 		"02-01-2006",
 		"01/02/2006",
