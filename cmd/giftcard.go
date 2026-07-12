@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ Examples:
 var (
 	flagCardNumber string
 	flagCardPin    string
+	flagLogHTTP    bool
 )
 
 func init() {
@@ -46,6 +48,7 @@ func init() {
 
 	giftcardAddCmd.Flags().StringVar(&flagCardNumber, "card-number", "", "Gift card number (numeric)")
 	giftcardAddCmd.Flags().StringVar(&flagCardPin, "card-pin", "", "Gift card PIN (numeric)")
+	giftcardAddCmd.Flags().BoolVar(&flagLogHTTP, "log-http", false, "Log HTTP request and response to stderr")
 
 	giftcardAddCmd.MarkFlagRequired("card-number")
 	giftcardAddCmd.MarkFlagRequired("card-pin")
@@ -70,7 +73,6 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate we have cookies
-	cookieHeader := cfg.BuildCookieHeader()
 	if cfg.CookieAT == "" {
 		return fmt.Errorf("access token (at cookie) not set — run 'flipkart-cli auth setup'")
 	}
@@ -97,9 +99,16 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 		req.Header.Set(k, v)
 	}
 
-	infofGrey("POST %s", giftcardAPI)
-	infofGrey("Content-Type: application/json")
-	infofGrey("Cookie: %d bytes", len(cookieHeader))
+	// Log HTTP request if requested
+	if flagLogHTTP {
+		fmt.Fprintf(os.Stderr, "---[ HTTP Request ]---\n")
+		fmt.Fprintf(os.Stderr, "POST %s\n", giftcardAPI)
+		for k, v := range headers {
+			fmt.Fprintf(os.Stderr, "%s: %s\n", k, v)
+		}
+		fmt.Fprintf(os.Stderr, "\n%s\n", string(bodyJSON))
+		fmt.Fprintf(os.Stderr, "---[ END ]---\n")
+	}
 
 	// Execute
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -114,6 +123,19 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Log HTTP response if requested
+	if flagLogHTTP {
+		fmt.Fprintf(os.Stderr, "---[ HTTP Response ]---\n")
+		fmt.Fprintf(os.Stderr, "HTTP %d %s\n", resp.StatusCode, resp.Status)
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				fmt.Fprintf(os.Stderr, "%s: %s\n", k, v)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "\n%s\n", string(respBody))
+		fmt.Fprintf(os.Stderr, "---[ END ]---\n")
+	}
+
 	// Record to config
 	record := config.GiftcardRecord{
 		CardNumber: cardNumber,
@@ -123,15 +145,14 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 	}
 	cfg.Giftcards = append(cfg.Giftcards, record)
 	if saveErr := cfg.Save(); saveErr != nil {
-		infofGrey("Warning: failed to save gift card history: %v", saveErr)
+		fmt.Fprintf(os.Stderr, "Warning: failed to save gift card history: %v\n", saveErr)
 	}
 
-	// Print response
-	fmt.Println()
+	// Print result — always to stdout, not gated by quiet flag
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		infofGreen("✓  Gift card linked successfully! (HTTP %d)", resp.StatusCode)
+		fmt.Printf("✓  Gift card linked (HTTP %d)\n", resp.StatusCode)
 	} else {
-		infofRed("✗  Failed to link gift card (HTTP %d)", resp.StatusCode)
+		fmt.Printf("✗  Gift card link failed (HTTP %d)\n", resp.StatusCode)
 	}
 
 	// Pretty-print JSON response
@@ -142,5 +163,9 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 		fmt.Println(pretty.String())
 	}
 
+	// Non-2xx -> error exit code so scripts can detect failure
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("API returned HTTP %d", resp.StatusCode)
+	}
 	return nil
 }
