@@ -1,0 +1,6 @@
+/bin/
+/flipkart-cli
+*.exe
+*.test
+*.out
+__debug_bin
