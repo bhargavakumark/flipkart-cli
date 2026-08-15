@@ -257,18 +257,29 @@ func logHTTPResponseComplete(startedAt time.Time, bodySize int) {
 // The link mutation may succeed even when its response is incomplete or a gateway
 // reports an error, so the original error is suppressed only after verification.
 func verifyGiftcardAdded(cfg *config.Config, cardNumber string, addErr error) error {
-	cards, err := fetchActiveGiftcards(cfg)
-	if err != nil {
+	const maxAttempts = 3
+	const retryDelay = time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if flagLogHTTP {
+			infofGrey("gift card verification attempt %d/%d", attempt, maxAttempts)
+		}
+		cards, err := fetchActiveGiftcards(cfg)
+		if err == nil {
+			for _, card := range cards {
+				if strings.TrimSpace(card.CardNumber) == cardNumber {
+					infofGreen("Gift card %s linked successfully (verified)", cardNumber)
+					return nil
+				}
+			}
+			return addErr
+		}
+
 		if flagLogHTTP {
 			infofGrey("gift card verification failed: %v", err)
 		}
-		return addErr
-	}
-
-	for _, card := range cards {
-		if strings.TrimSpace(card.CardNumber) == cardNumber {
-			infofGreen("Gift card %s linked successfully (verified)", cardNumber)
-			return nil
+		if attempt < maxAttempts {
+			time.Sleep(retryDelay)
 		}
 	}
 	return addErr
