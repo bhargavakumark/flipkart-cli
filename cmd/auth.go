@@ -26,7 +26,7 @@ Usage: echo "<headers>" | flipkart-cli auth setup
 
 After signing into Flipkart in your browser:
   1. Open Developer Tools → Network tab
-  2. Find a request to 1.rome.api.flipkart.com
+  2. Find a request to 1.rome.api.flipkart.com (or another Rome API site)
   3. Right-click → Copy → Copy Request Headers
   4. Pipe them in: echo "<headers>" | flipkart-cli auth setup
 
@@ -36,6 +36,7 @@ Or pass the Cookie header directly:
 Examples:
   echo "Cookie: T=TI...; at=eyJ..." | flipkart-cli auth setup
   flipkart-cli auth setup --cookie-string "T=TI...; at=eyJ..."
+  flipkart-cli auth setup --site 2.rome.api.flipkart.com
 `,
 	RunE: runAuthSetup,
 	Args: cobra.NoArgs,
@@ -50,6 +51,7 @@ var authShowCmd = &cobra.Command{
 var (
 	flagCookieString string
 	flagUserAgent    string
+	flagSite         string
 )
 
 func init() {
@@ -60,6 +62,8 @@ func init() {
 		"Cookie header value to parse directly (non-interactive)")
 	authSetupCmd.Flags().StringVar(&flagUserAgent, "user-agent", "",
 		"User-Agent header value (default: Mozilla/5.0 ... Firefox/152.0)")
+	authSetupCmd.Flags().StringVar(&flagSite, "site", "",
+		"API site host or URL (default: 1.rome.api.flipkart.com)")
 }
 
 func runAuthSetup(cmd *cobra.Command, args []string) error {
@@ -121,10 +125,22 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 				parseCookies(value, fkCfg)
 			case "User-Agent":
 				fkCfg.UserAgent = value
+			case "Accept-Language":
+				fkCfg.AcceptLanguage = value
+			case "sec-ch-ua":
+				fkCfg.SecCHUA = value
+			case "sec-ch-ua-mobile":
+				fkCfg.SecCHUAMobile = value
+			case "sec-ch-ua-platform":
+				fkCfg.SecCHUAPlatform = value
 			case "Referer":
 				fkCfg.Referer = value
 			case "Origin":
 				fkCfg.Origin = value
+			case "Host", "host":
+				if fkCfg.Site == "" && flagSite == "" {
+					fkCfg.Site = value
+				}
 			}
 		}
 	}
@@ -151,6 +167,11 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 	if fkCfg.Origin == "" {
 		fkCfg.Origin = "https://www.flipkart.com"
 	}
+	if flagSite != "" {
+		fkCfg.Site = flagSite
+	} else if fkCfg.Site == "" {
+		fkCfg.Site = "1.rome.api.flipkart.com"
+	}
 	fkCfg.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 
 	if err := fkCfg.Save(); err != nil {
@@ -158,6 +179,7 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("  Config saved: %s\n", config.ConfigPath())
+	fmt.Printf("  Site:         %s\n", fkCfg.GetSite())
 	fmt.Printf("  at:           %s\n", config.MaskString(fkCfg.CookieAT))
 	fmt.Printf("  User-Agent:   %s\n", fkCfg.UserAgent)
 
@@ -260,6 +282,7 @@ func runAuthShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("User-Agent:             %s\n", cfg.UserAgent)
 	fmt.Printf("Referer:                %s\n", cfg.Referer)
 	fmt.Printf("Origin:                 %s\n", cfg.Origin)
+	fmt.Printf("Site:                   %s\n", cfg.GetSite())
 	fmt.Println()
 	fmt.Printf("Cookie header:          %d bytes\n", len(cookieHeader))
 	fmt.Println()

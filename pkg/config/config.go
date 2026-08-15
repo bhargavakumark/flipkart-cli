@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // GiftcardRecord stores a linked gift card for display/history.
@@ -18,19 +19,24 @@ type GiftcardRecord struct {
 // Config represents ~/.config/flipkart-cli/config.json
 type Config struct {
 	// Individual cookies extracted from browser session
-	CookieAT  string `json:"cookie_at"`  // access token JWT
-	CookieRT  string `json:"cookie_rt"`  // refresh token JWT
-	CookieT   string `json:"cookie_t"`   // T session cookie
-	CookieSN  string `json:"cookie_sn"`  // SN token cookie
-	CookieVD  string `json:"cookie_vd"`  // vd cookie
-	CookieS   string `json:"cookie_s"`   // S cookie
-	CookieULSN string `json:"cookie_ulsn"` // ULSN cookie
+	CookieAT    string `json:"cookie_at"`    // access token JWT
+	CookieRT    string `json:"cookie_rt"`    // refresh token JWT
+	CookieT     string `json:"cookie_t"`     // T session cookie
+	CookieSN    string `json:"cookie_sn"`    // SN token cookie
+	CookieVD    string `json:"cookie_vd"`    // vd cookie
+	CookieS     string `json:"cookie_s"`     // S cookie
+	CookieULSN  string `json:"cookie_ulsn"`  // ULSN cookie
 	CookieExtra string `json:"cookie_extra"` // any other cookies not captured individually
 
 	// Browser fingerprint
-	UserAgent string `json:"user_agent"`
-	Referer   string `json:"referer"`
-	Origin    string `json:"origin"`
+	UserAgent       string `json:"user_agent"`
+	AcceptLanguage  string `json:"accept_language,omitempty"`
+	SecCHUA         string `json:"sec_ch_ua,omitempty"`
+	SecCHUAMobile   string `json:"sec_ch_ua_mobile,omitempty"`
+	SecCHUAPlatform string `json:"sec_ch_ua_platform,omitempty"`
+	Referer         string `json:"referer"`
+	Origin          string `json:"origin"`
+	Site            string `json:"site,omitempty"`
 
 	// Gift card history
 	Giftcards []GiftcardRecord `json:"giftcards,omitempty"`
@@ -114,19 +120,32 @@ func (c *Config) BuildCookieHeader() string {
 // BuildHeaders returns the map of HTTP headers needed for API calls.
 func (c *Config) BuildHeaders() map[string]string {
 	headers := map[string]string{
-		"Content-Type": "application/json",
-		"Accept":       "*/*",
-		"DNT":          "1",
-		"Priority":     "u=0",
-		"Sec-Fetch-Dest": "SAME-SITE",
+		"Content-Type":   "application/json",
+		"Accept":         "*/*",
+		"DNT":            "1",
+		"Priority":       "u=0",
+		"Sec-Fetch-Dest": "empty",
 		"Sec-Fetch-Mode": "cors",
 		"Sec-Fetch-Site": "same-site",
-		"Connection":   "keep-alive",
+		"Connection":     "keep-alive",
 	}
 
 	if c.UserAgent != "" {
 		headers["User-Agent"] = c.UserAgent
 		headers["X-User-Agent"] = c.UserAgent + " FKUA/website/42/website/Desktop"
+	}
+	headers["Accept-Language"] = c.AcceptLanguage
+	if headers["Accept-Language"] == "" {
+		headers["Accept-Language"] = "en-US,en;q=0.9"
+	}
+	if c.SecCHUA != "" {
+		headers["sec-ch-ua"] = c.SecCHUA
+	}
+	if c.SecCHUAMobile != "" {
+		headers["sec-ch-ua-mobile"] = c.SecCHUAMobile
+	}
+	if c.SecCHUAPlatform != "" {
+		headers["sec-ch-ua-platform"] = c.SecCHUAPlatform
 	}
 	if c.Referer != "" {
 		headers["Referer"] = c.Referer
@@ -154,4 +173,26 @@ func MaskString(s string) string {
 		return "***masked***"
 	}
 	return s[:6] + "..." + s[len(s)-4:]
+}
+
+// GetSite returns configured site or default 1.rome.api.flipkart.com.
+func (c *Config) GetSite() string {
+	site := c.Site
+	if site == "" {
+		return "1.rome.api.flipkart.com"
+	}
+	site = strings.TrimPrefix(site, "https://")
+	site = strings.TrimPrefix(site, "http://")
+	site = strings.TrimSuffix(site, "/")
+	return site
+}
+
+// GiftcardAPI returns the giftcard link API URL for the configured site.
+func (c *Config) GiftcardAPI() string {
+	return fmt.Sprintf("https://%s/api/2/wallet/egv/link", c.GetSite())
+}
+
+// GiftcardListAPI returns the giftcard list API URL for the configured site.
+func (c *Config) GiftcardListAPI() string {
+	return fmt.Sprintf("https://%s/api/2/wallet/egv/active", c.GetSite())
 }
