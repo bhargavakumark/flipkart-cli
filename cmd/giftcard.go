@@ -258,7 +258,7 @@ func logHTTPResponseComplete(startedAt time.Time, bodySize int) {
 // reports an error, so the original error is suppressed only after verification.
 func verifyGiftcardAdded(cfg *config.Config, cardNumber string, addErr error) error {
 	const maxAttempts = 3
-	const retryDelay = time.Second
+	const retryDelay = 5 * time.Second
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if flagLogHTTP {
