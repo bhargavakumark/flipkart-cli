@@ -173,18 +173,6 @@ func runGiftcardAdd(cmd *cobra.Command, args []string) error {
 		logHTTPResponseComplete(startedAt, len(respBody))
 	}
 
-	// Record to config
-	record := config.GiftcardRecord{
-		CardNumber: cardNumber,
-		Pin:        cardPin,
-		LinkedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-		Response:   string(respBody),
-	}
-	cfg.Giftcards = append(cfg.Giftcards, record)
-	if saveErr := cfg.Save(); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to save gift card history: %v\n", saveErr)
-	}
-
 	// Non-2xx -> error exit code so scripts can detect failure
 	if resp.StatusCode >= 400 {
 		addErr := fmt.Errorf("API returned HTTP %d: %s", resp.StatusCode, string(respBody))
