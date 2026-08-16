@@ -8,14 +8,6 @@ import (
 	"strings"
 )
 
-// GiftcardRecord stores a linked gift card for display/history.
-type GiftcardRecord struct {
-	CardNumber string `json:"card_number"`
-	Pin        string `json:"pin"`
-	LinkedAt   string `json:"linked_at"`
-	Response   string `json:"response,omitempty"`
-}
-
 // Config represents ~/.config/flipkart-cli/config.json
 type Config struct {
 	// Individual cookies extracted from browser session
@@ -37,9 +29,6 @@ type Config struct {
 	Referer         string `json:"referer"`
 	Origin          string `json:"origin"`
 	Site            string `json:"site,omitempty"`
-
-	// Gift card history
-	Giftcards []GiftcardRecord `json:"giftcards,omitempty"`
 
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
