@@ -22,21 +22,21 @@ var authSetupCmd = &cobra.Command{
 	Short: "Configure Flipkart session cookies",
 	Long: `Configure Flipkart session cookies by piping in request headers.
 
-Usage: echo "<headers>" | flipkart-cli auth setup
+Usage: echo "<headers>" | flipkart-cli auth setup --mobile <number>
 
 After signing into Flipkart in your browser:
   1. Open Developer Tools → Network tab
   2. Find a request to 1.rome.api.flipkart.com (or another Rome API site)
   3. Right-click → Copy → Copy Request Headers
-  4. Pipe them in: echo "<headers>" | flipkart-cli auth setup
+  4. Pipe them in: echo "<headers>" | flipkart-cli auth setup --mobile <number>
 
 Or pass the Cookie header directly:
-  flipkart-cli auth setup --cookie-string "T=...; at=...; ..."
+  flipkart-cli auth setup --mobile <number> --cookie-string "T=...; at=...; ..."
 
 Examples:
-  echo "Cookie: T=TI...; at=eyJ..." | flipkart-cli auth setup
-  flipkart-cli auth setup --cookie-string "T=TI...; at=eyJ..."
-  flipkart-cli auth setup --site 2.rome.api.flipkart.com
+  echo "Cookie: T=TI...; at=eyJ..." | flipkart-cli auth setup --mobile 9876543210
+  flipkart-cli auth setup --mobile 9876543210 --cookie-string "T=TI...; at=eyJ..."
+  flipkart-cli auth setup --mobile 9876543210 --site 2.rome.api.flipkart.com
 `,
 	RunE: runAuthSetup,
 	Args: cobra.NoArgs,
@@ -48,15 +48,24 @@ var authShowCmd = &cobra.Command{
 	RunE:  runAuthShow,
 }
 
+var authDefaultCmd = &cobra.Command{
+	Use:   "default <mobile>",
+	Short: "Set the default Flipkart account",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAuthDefault,
+}
+
 var (
 	flagCookieString string
 	flagUserAgent    string
 	flagSite         string
+	flagVerbose      bool
 )
 
 func init() {
 	authCmd.AddCommand(authSetupCmd)
 	authCmd.AddCommand(authShowCmd)
+	authCmd.AddCommand(authDefaultCmd)
 
 	authSetupCmd.Flags().StringVar(&flagCookieString, "cookie-string", "",
 		"Cookie header value to parse directly (non-interactive)")
@@ -64,13 +73,27 @@ func init() {
 		"User-Agent header value (default: Mozilla/5.0 ... Firefox/152.0)")
 	authSetupCmd.Flags().StringVar(&flagSite, "site", "",
 		"API site host or URL (default: 1.rome.api.flipkart.com)")
+	authShowCmd.Flags().BoolVarP(&flagVerbose, "verbose", "v", false,
+		"Show full details including secondary cookies and headers")
 }
 
 func runAuthSetup(cmd *cobra.Command, args []string) error {
-	fkCfg, _ := config.Load()
+	if flagMobile == "" {
+		return fmt.Errorf("--mobile <number> is required for auth setup")
+	}
+
+	// Try loading the existing config for this mobile if it exists
+	var fkCfg *config.Config
+	mc, err := config.LoadMultiConfig()
+	if err == nil && mc.Accounts != nil {
+		if existing, ok := mc.Accounts[flagMobile]; ok {
+			fkCfg = existing
+		}
+	}
 	if fkCfg == nil {
 		fkCfg = &config.Config{}
 	}
+	fkCfg.Mobile = flagMobile
 
 	// Track whether this run actually parsed key values (vs loading from old config)
 	hadCookieHeader := false
@@ -86,7 +109,7 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 		// Must be piped — refuse to run interactively
 		fi, _ := os.Stdin.Stat()
 		if (fi.Mode() & os.ModeCharDevice) != 0 {
-			return fmt.Errorf("auth setup reads headers from pipe — use:\n  echo \"Cookie: T=...; at=...\" | flipkart-cli auth setup")
+			return fmt.Errorf("auth setup reads headers from pipe — use:\n  echo \"Cookie: T=...; at=...\" | flipkart-cli auth setup --mobile %s", flagMobile)
 		}
 
 		// Read all piped input from stdin (reads until EOF — pipe closes)
@@ -97,7 +120,7 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 
 		text := strings.TrimSpace(string(data))
 		if text == "" {
-			return fmt.Errorf("no input received — pipe request headers in, e.g.:\n  echo \"Cookie: T=...\" | flipkart-cli auth setup")
+			return fmt.Errorf("no input received — pipe request headers in, e.g.:\n  echo \"Cookie: T=...\" | flipkart-cli auth setup --mobile %s", flagMobile)
 		}
 
 		for _, line := range strings.Split(text, "\n") {
@@ -239,55 +262,106 @@ func parseCookies(cookieStr string, cfg *config.Config) {
 }
 
 func runAuthShow(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
+	mc, err := config.LoadMultiConfig()
 	if err != nil {
 		fmt.Println("No configuration found.")
-		fmt.Printf("Run 'flipkart-cli auth setup' to configure credentials.\n")
+		fmt.Printf("Run 'flipkart-cli auth setup --mobile <number>' to configure credentials.\n")
 		fmt.Println()
 		fmt.Printf("Config location: %s\n", config.ConfigPath())
 		return nil
 	}
 
-	cookieHeader := cfg.BuildCookieHeader()
+	mobile := flagMobile
+	if mobile == "" {
+		mobile = mc.DefaultAccount
+	}
+
+	var cfg *config.Config
+	if mobile != "" && mc.Accounts != nil {
+		cfg = mc.Accounts[mobile]
+	}
 
 	fmt.Println("Flipkart CLI Configuration")
 	fmt.Println("──────────────────────────")
 	fmt.Println()
-	if cfg.CookieAT != "" {
-		fmt.Printf("at (Access Token):      %s\n", config.MaskString(cfg.CookieAT))
-	}
-	if cfg.CookieRT != "" {
-		fmt.Printf("rt (Refresh Token):     %s\n", config.MaskString(cfg.CookieRT))
-	}
-	if cfg.CookieT != "" {
-		fmt.Printf("T (Session):            %s\n", config.MaskString(cfg.CookieT))
-	}
-	if cfg.CookieSN != "" {
-		fmt.Printf("SN (Token):             %s\n", config.MaskString(cfg.CookieSN))
-	}
-	if cfg.CookieVD != "" {
-		fmt.Printf("vd:                     %s\n", config.MaskString(cfg.CookieVD))
-	}
-	if cfg.CookieS != "" {
-		fmt.Printf("S:                      %s\n", config.MaskString(cfg.CookieS))
-	}
-	if cfg.CookieULSN != "" {
-		fmt.Printf("ULSN:                   %s\n", config.MaskString(cfg.CookieULSN))
-	}
-	if cfg.CookieExtra != "" {
-		fmt.Printf("Extra cookies:          %s\n", config.MaskString(cfg.CookieExtra))
+
+	if cfg == nil {
+		if flagMobile != "" {
+			fmt.Printf("Account for mobile %q not found.\n", flagMobile)
+		} else {
+			fmt.Println("No active account setup. Use 'auth default <mobile>' or 'auth setup --mobile <number>'.")
+		}
+	} else {
+		cookieHeader := cfg.BuildCookieHeader()
+
+		fmt.Printf("Mobile:                 %s (Active)\n", mobile)
+		if cfg.CookieAT != "" {
+			fmt.Printf("at (Access Token):      %s\n", config.MaskString(cfg.CookieAT))
+		}
+		if cfg.CookieRT != "" {
+			fmt.Printf("rt (Refresh Token):     %s\n", config.MaskString(cfg.CookieRT))
+		}
+		if cfg.CookieT != "" {
+			fmt.Printf("T (Session):            %s\n", config.MaskString(cfg.CookieT))
+		}
+		if flagVerbose {
+			if cfg.CookieSN != "" {
+				fmt.Printf("SN (Token):             %s\n", config.MaskString(cfg.CookieSN))
+			}
+			if cfg.CookieVD != "" {
+				fmt.Printf("vd:                     %s\n", config.MaskString(cfg.CookieVD))
+			}
+			if cfg.CookieS != "" {
+				fmt.Printf("S:                      %s\n", config.MaskString(cfg.CookieS))
+			}
+			if cfg.CookieULSN != "" {
+				fmt.Printf("ULSN:                   %s\n", config.MaskString(cfg.CookieULSN))
+			}
+			if cfg.CookieExtra != "" {
+				fmt.Printf("Extra cookies:          %s\n", config.MaskString(cfg.CookieExtra))
+			}
+			fmt.Println()
+			fmt.Printf("User-Agent:             %s\n", cfg.UserAgent)
+			fmt.Printf("Referer:                %s\n", cfg.Referer)
+			fmt.Printf("Origin:                 %s\n", cfg.Origin)
+			fmt.Printf("Site:                   %s\n", cfg.GetSite())
+			fmt.Println()
+			fmt.Printf("Cookie header:          %d bytes\n", len(cookieHeader))
+		} else {
+			fmt.Printf("Site:                   %s\n", cfg.GetSite())
+		}
+		fmt.Printf("Last updated:           %s\n", cfg.UpdatedAt)
 	}
 
-	fmt.Println()
-	fmt.Printf("User-Agent:             %s\n", cfg.UserAgent)
-	fmt.Printf("Referer:                %s\n", cfg.Referer)
-	fmt.Printf("Origin:                 %s\n", cfg.Origin)
-	fmt.Printf("Site:                   %s\n", cfg.GetSite())
-	fmt.Println()
-	fmt.Printf("Cookie header:          %d bytes\n", len(cookieHeader))
 	fmt.Println()
 	fmt.Printf("Config file:            %s\n", config.ConfigPath())
-	fmt.Printf("Last updated:           %s\n", cfg.UpdatedAt)
 
+	if mc.Accounts != nil && len(mc.Accounts) > 0 {
+		fmt.Println()
+		fmt.Println("Saved Accounts:")
+		for mob := range mc.Accounts {
+			isDefault := mob == mc.DefaultAccount
+			isActive := mob == mobile
+			status := ""
+			if isActive && isDefault {
+				status = " (active, default)"
+			} else if isActive {
+				status = " (active)"
+			} else if isDefault {
+				status = " (default)"
+			}
+			fmt.Printf("  - %s%s\n", mob, status)
+		}
+	}
+
+	return nil
+}
+
+func runAuthDefault(cmd *cobra.Command, args []string) error {
+	mobile := args[0]
+	if err := config.SetDefaultAccount(mobile); err != nil {
+		return err
+	}
+	fmt.Printf("Default account set to: %s\n", mobile)
 	return nil
 }

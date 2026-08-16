@@ -10,6 +10,8 @@ import (
 
 // Config represents ~/.config/flipkart-cli/config.json
 type Config struct {
+	Mobile string `json:"mobile,omitempty"`
+
 	// Individual cookies extracted from browser session
 	CookieAT    string `json:"cookie_at"`    // access token JWT
 	CookieRT    string `json:"cookie_rt"`    // refresh token JWT
@@ -33,7 +35,21 @@ type Config struct {
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
+var (
+	SelectedMobile  string
+	customConfigDir string // for testing
+)
+
+// MultiConfig represents the structure containing multiple accounts and the default account
+type MultiConfig struct {
+	Accounts       map[string]*Config `json:"accounts"`
+	DefaultAccount string             `json:"default_account"`
+}
+
 func configDir() string {
+	if customConfigDir != "" {
+		return customConfigDir
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "flipkart-cli")
 }
@@ -45,25 +61,80 @@ func configPath() string {
 // ConfigPath returns the path for display purposes.
 func ConfigPath() string { return configPath() }
 
-// Load reads the config from disk.
+// Load reads the config from disk for the selected mobile or the default account.
 func Load() (*Config, error) {
-	data, err := os.ReadFile(configPath())
+	mc, err := LoadMultiConfig()
 	if err != nil {
-		return nil, fmt.Errorf("config not found at %s\n\nRun: flipkart-cli auth setup\n\nOriginal error: %w",
+		return nil, fmt.Errorf("config not found at %s\n\nRun: flipkart-cli auth setup --mobile <number>\n\nOriginal error: %w",
 			configPath(), err)
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", configPath(), err)
+
+	mobile := SelectedMobile
+	if mobile == "" {
+		mobile = mc.DefaultAccount
 	}
-	return &cfg, nil
+
+	if mobile == "" {
+		return nil, fmt.Errorf("no default account set. Run: flipkart-cli auth default <mobile>")
+	}
+
+	cfg, ok := mc.Accounts[mobile]
+	if !ok {
+		return nil, fmt.Errorf("account for mobile %q not found. Run: flipkart-cli auth setup --mobile %s", mobile, mobile)
+	}
+
+	cfg.Mobile = mobile
+	return cfg, nil
 }
 
-// Save writes the config to disk.
-func (c *Config) Save() error {
-	data, err := json.MarshalIndent(c, "", "  ")
+// LoadMultiConfig reads the full MultiConfig from disk.
+func LoadMultiConfig() (*MultiConfig, error) {
+	data, err := os.ReadFile(configPath())
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return nil, err
+	}
+	var mc MultiConfig
+	if err := json.Unmarshal(data, &mc); err != nil {
+		return nil, err
+	}
+	return &mc, nil
+}
+
+// Save writes the config to disk inside MultiConfig.
+func (c *Config) Save() error {
+	mobile := c.Mobile
+	if mobile == "" {
+		mobile = SelectedMobile
+	}
+	if mobile == "" {
+		return fmt.Errorf("cannot save config: mobile number is empty")
+	}
+
+	mc, err := LoadMultiConfig()
+	if err != nil {
+		mc = &MultiConfig{
+			Accounts: make(map[string]*Config),
+		}
+	}
+	if mc.Accounts == nil {
+		mc.Accounts = make(map[string]*Config)
+	}
+
+	// Make sure Mobile is set on the saved object
+	c.Mobile = mobile
+	mc.Accounts[mobile] = c
+	if mc.DefaultAccount == "" {
+		mc.DefaultAccount = mobile
+	}
+
+	return SaveMultiConfig(mc)
+}
+
+// SaveMultiConfig writes the full MultiConfig to disk.
+func SaveMultiConfig(mc *MultiConfig) error {
+	data, err := json.MarshalIndent(mc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal multi-config: %w", err)
 	}
 	if err := os.MkdirAll(configDir(), 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -72,6 +143,19 @@ func (c *Config) Save() error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
+}
+
+// SetDefaultAccount updates the default account to use when no mobile is selected.
+func SetDefaultAccount(mobile string) error {
+	mc, err := LoadMultiConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if _, ok := mc.Accounts[mobile]; !ok {
+		return fmt.Errorf("account for mobile %q not found", mobile)
+	}
+	mc.DefaultAccount = mobile
+	return SaveMultiConfig(mc)
 }
 
 // BuildCookieHeader reconstructs the Cookie header from stored values.

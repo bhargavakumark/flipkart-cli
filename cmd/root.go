@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/bkancherla/flipkart-cli/pkg/config"
 	"github.com/spf13/cobra"
 )
 
 // Global flags
-var quiet bool
+var (
+	quiet      bool
+	flagMobile string
+)
 
 var rootCmd = &cobra.Command{
 	SilenceErrors: true,
@@ -21,12 +25,14 @@ Authentication is stored in ~/.config/flipkart-cli/config.json
 (cookies extracted from browser session via 'flipkart-cli auth setup').
 
 Examples:
-  flipkart-cli auth setup
+  flipkart-cli auth setup --mobile 9876543210
   flipkart-cli auth show
   flipkart-cli giftcard list
   flipkart-cli giftcard add --card-number 6000170910944181 --card-pin 149232
-  flipkart-cli giftcard add --card-number 6000170910944181 --card-pin 149232
 `,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		config.SelectedMobile = flagMobile
+	},
 }
 
 func Execute() error {
@@ -36,6 +42,8 @@ func Execute() error {
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false,
 		"Suppress progress messages to stderr")
+	rootCmd.PersistentFlags().StringVarP(&flagMobile, "mobile", "m", "",
+		"Flipkart mobile number/account to use")
 
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(giftcardCmd)
