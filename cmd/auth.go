@@ -286,22 +286,8 @@ func runAuthShow(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Printf("Cookie header:          %d bytes\n", len(cookieHeader))
 	fmt.Println()
-	fmt.Printf("Gift cards linked:      %d\n", len(cfg.Giftcards))
-	if len(cfg.Giftcards) > 0 {
-		last := cfg.Giftcards[len(cfg.Giftcards)-1]
-		fmt.Printf("Last linked:            %s... (%s)\n",
-			maskCard(last.CardNumber), last.LinkedAt)
-	}
-	fmt.Println()
 	fmt.Printf("Config file:            %s\n", config.ConfigPath())
 	fmt.Printf("Last updated:           %s\n", cfg.UpdatedAt)
 
 	return nil
-}
-
-func maskCard(num string) string {
-	if len(num) <= 4 {
-		return "****"
-	}
-	return "****" + num[len(num)-4:]
 }
