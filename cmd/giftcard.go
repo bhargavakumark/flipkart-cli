@@ -26,17 +26,20 @@ var giftcardListCmd = &cobra.Command{
 	Short: "List active gift cards on your Flipkart account",
 	Long: `List all active eGift Vouchers (gift cards) linked to your Flipkart account.
 
-Shows card number (masked), balance, current date, and expiry date for each card.
+Shows card number (masked), balance, current date, and expiry date for each card,
+followed by the total balance across all listed cards.
 
 Requires authentication (run 'flipkart-cli auth setup' first).
 
 Examples:
   flipkart-cli giftcard list
+  flipkart-cli giftcard list --format json
   flipkart-cli giftcard list --log-http
 `,
-	Example: `  flipkart-cli giftcard list`,
-	RunE:    runGiftcardList,
-	Args:    cobra.NoArgs,
+	Example: `  flipkart-cli giftcard list
+  flipkart-cli giftcard list --format json`,
+	RunE: runGiftcardList,
+	Args: cobra.NoArgs,
 }
 
 var giftcardAddCmd = &cobra.Command{
@@ -57,6 +60,7 @@ var (
 	flagCardNumber string
 	flagCardPin    string
 	flagLogHTTP    bool
+	flagFormat     string
 )
 
 func init() {
@@ -71,6 +75,7 @@ func init() {
 	giftcardAddCmd.MarkFlagRequired("card-pin")
 
 	giftcardListCmd.Flags().BoolVar(&flagLogHTTP, "log-http", false, "Log HTTP request and response to stderr")
+	giftcardListCmd.Flags().StringVar(&flagFormat, "format", "table", "Output format: table or json")
 }
 
 func runGiftcardAdd(cmd *cobra.Command, args []string) error {
@@ -331,6 +336,11 @@ type giftcardResponse struct {
 }
 
 func runGiftcardList(cmd *cobra.Command, args []string) error {
+	format, err := parseListFormat(flagFormat)
+	if err != nil {
+		return err
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("authentication required — run 'flipkart-cli auth setup' first: %w", err)
@@ -343,12 +353,26 @@ func runGiftcardList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	if format == "json" {
+		return printGiftcardJSON(cards)
+	}
 	if len(cards) == 0 {
 		fmt.Println("No active gift cards found.")
 		return nil
 	}
 	printGiftcardTable(cards)
 	return nil
+}
+
+// parseListFormat validates and normalises the --format flag value.
+func parseListFormat(s string) (string, error) {
+	switch f := strings.ToLower(strings.TrimSpace(s)); f {
+	case "table", "json":
+		return f, nil
+	default:
+		return "", fmt.Errorf("--format must be \"table\" or \"json\", got %q", s)
+	}
 }
 
 // giftcardInfo represents a single gift card from the API.
@@ -569,6 +593,63 @@ func printGiftcardTable(cards []giftcardInfo) {
 		statusStr := cardStatus(c)
 		fmt.Printf("  %-*s  %*s  %*s  %-*s  %s\n", maxCard, cardStr, balWidth, balanceStr, origWidth, origStr, maxExp, expiryStr, statusStr)
 	}
+
+	// Total footer, aligned under the Balance column.
+	fmt.Printf("  %s  %s  %s  %s  %s\n",
+		strings.Repeat("-", maxCard),
+		strings.Repeat("-", balWidth),
+		strings.Repeat("-", origWidth),
+		strings.Repeat("-", maxExp),
+		strings.Repeat("-", 10))
+	fmt.Printf("  %*s  %*s\n", maxCard, "Total", balWidth, fmt.Sprintf("%.0f", totalBalance(cards)))
+}
+
+// totalBalance sums the effective balance across all cards.
+func totalBalance(cards []giftcardInfo) float64 {
+	var total float64
+	for i := range cards {
+		total += cards[i].effectiveBalance()
+	}
+	return total
+}
+
+// giftcardJSON is a single gift card in the JSON output form.
+type giftcardJSON struct {
+	CardNumber     string  `json:"cardNumber"`
+	Balance        float64 `json:"balance"`
+	OriginalAmount float64 `json:"originalAmount"`
+	Expires        string  `json:"expires"`
+	Status         string  `json:"status"`
+}
+
+// giftcardListJSON is the JSON output shape for giftcard list. It carries the
+// total balance alongside the individual cards.
+type giftcardListJSON struct {
+	Cards        []giftcardJSON `json:"cards"`
+	TotalBalance float64        `json:"totalBalance"`
+}
+
+// printGiftcardJSON writes the cards and their summed balance as JSON.
+func printGiftcardJSON(cards []giftcardInfo) error {
+	out := giftcardListJSON{
+		Cards:        make([]giftcardJSON, 0, len(cards)),
+		TotalBalance: totalBalance(cards),
+	}
+	for _, c := range cards {
+		out.Cards = append(out.Cards, giftcardJSON{
+			CardNumber:     maskCardDisplay(c.CardNumber),
+			Balance:        c.effectiveBalance(),
+			OriginalAmount: c.OriginalAmount,
+			Expires:        shortDate(c.effectiveExpiry()),
+			Status:         cardStatus(c),
+		})
+	}
+	encoded, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal gift cards as JSON: %w", err)
+	}
+	fmt.Println(string(encoded))
+	return nil
 }
 
 // maskCardDisplay formats a card number for display.
