@@ -1,6 +1,6 @@
 # 2. Key accounts by mobile number in a multi-account config
 
-Date: 2026-08-16
+Date: 2026-10-19
 Status: accepted
 
 ## Why

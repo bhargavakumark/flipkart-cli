@@ -1,6 +1,6 @@
 # 1. Import browser session cookies for authentication
 
-Date: 2026-07-12
+Date: 2026-10-19
 Status: accepted
 
 ## Why

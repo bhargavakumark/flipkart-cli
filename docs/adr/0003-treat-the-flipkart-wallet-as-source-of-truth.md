@@ -1,6 +1,6 @@
 # 3. Treat the Flipkart wallet as the record of linked gift cards
 
-Date: 2026-08-16
+Date: 2026-10-19
 Status: accepted
 
 ## Why
