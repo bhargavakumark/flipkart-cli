@@ -7,7 +7,7 @@ the reasoning reconstructed from what the code does and from the commit
 messages that show what was tried and then replaced.
 
 | Number | Title                                                        | Status   |
-|--------|--------------------------------------------------------------|----------|
+| ------ | ------------------------------------------------------------ | -------- |
 | 0001   | Import browser session cookies for authentication            | accepted |
 | 0002   | Key accounts by mobile number in a multi-account config      | accepted |
 | 0003   | Treat the Flipkart wallet as the record of linked gift cards | accepted |
