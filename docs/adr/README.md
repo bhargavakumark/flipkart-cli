@@ -1,10 +1,8 @@
 # Architecture Decision Records
 
-These records were reverse-engineered from the code and the commit history of
-this repository rather than written as the decisions were made. Each one
-describes a choice that is already baked into the current implementation, with
-the reasoning reconstructed from what the code does and from the commit
-messages that show what was tried and then replaced.
+These records were reverse-engineered from the code and commit history rather
+than written as the decisions were made. Each describes a choice already
+present in the implementation.
 
 | Number | Title                                                        | Status   |
 | ------ | ------------------------------------------------------------ | -------- |
