@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/bhargavakumark/go-cli-lib/securefile"
 )
 
 // Config represents ~/.config/flipkart-cli/config.json
@@ -136,10 +138,7 @@ func SaveMultiConfig(mc *MultiConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal multi-config: %w", err)
 	}
-	if err := os.MkdirAll(configDir(), 0700); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-	if err := os.WriteFile(configPath(), data, 0600); err != nil {
+	if err := securefile.WriteConfig(configPath(), data); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil

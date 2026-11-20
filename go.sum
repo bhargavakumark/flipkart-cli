@@ -1,3 +1,5 @@
+github.com/bhargavakumark/go-cli-lib v0.7.1-0.20261120130425-167170d9aea9 h1:vseMsEUvK0fEJoZRjUHzCT3DGGfhhZs7rO9QgnXNSRA=
+github.com/bhargavakumark/go-cli-lib v0.7.1-0.20261120130425-167170d9aea9/go.mod h1:cgPieaRv9RJCuIcr+a3w1x3khIoOcfQ8Kh5Uxym+iNc=
 github.com/cpuguy83/go-md2man/v2 v2.0.3/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=

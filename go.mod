@@ -2,7 +2,10 @@ module github.com/bkancherla/flipkart-cli
 
 go 1.27.0
 
-require github.com/spf13/cobra v1.8.0
+require (
+	github.com/bhargavakumark/go-cli-lib v0.7.1-0.20261120130425-167170d9aea9
+	github.com/spf13/cobra v1.8.0
+)
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
