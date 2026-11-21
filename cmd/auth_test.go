@@ -20,6 +20,7 @@ func isolateAuthSetup(t *testing.T) {
 	oldCookieString := flagCookieString
 	oldUserAgent := flagUserAgent
 	oldSite := flagSite
+	oldVerbose := flagVerbose
 	oldStdin := os.Stdin
 	oldSelectedMobile := config.SelectedMobile
 	t.Cleanup(func() {
@@ -27,6 +28,7 @@ func isolateAuthSetup(t *testing.T) {
 		flagCookieString = oldCookieString
 		flagUserAgent = oldUserAgent
 		flagSite = oldSite
+		flagVerbose = oldVerbose
 		os.Stdin = oldStdin
 		config.SelectedMobile = oldSelectedMobile
 	})
@@ -35,6 +37,7 @@ func isolateAuthSetup(t *testing.T) {
 	flagCookieString = ""
 	flagUserAgent = ""
 	flagSite = ""
+	flagVerbose = false
 }
 
 func pipeAuthInput(t *testing.T, input string) {
@@ -129,6 +132,76 @@ func TestRunAuthSetupParsesPipedRequestHeaders(t *testing.T) {
 	}
 	if cfg.UpdatedAt == "" {
 		t.Error("UpdatedAt was not set")
+	}
+}
+
+func TestRunAuthSetupPreservesExistingAccountSettings(t *testing.T) {
+	isolateAuthSetup(t)
+	other := &config.Config{Mobile: "0987654321", CookieAT: "other-token"}
+	if err := other.Save(); err != nil {
+		t.Fatalf("save other account: %v", err)
+	}
+	existing := &config.Config{
+		Mobile: flagMobile, CookieAT: "old-token", UserAgent: "existing-agent",
+		Site: "existing.example.test", AcceptLanguage: "en-CA",
+	}
+	if err := existing.Save(); err != nil {
+		t.Fatalf("save existing account: %v", err)
+	}
+
+	pipeAuthInput(t, "Cookie: at=new-token\n")
+	if err := runAuthSetup(nil, nil); err != nil {
+		t.Fatalf("runAuthSetup() error = %v", err)
+	}
+
+	mc, err := config.LoadMultiConfig()
+	if err != nil {
+		t.Fatalf("LoadMultiConfig() error = %v", err)
+	}
+	updated := mc.Accounts[flagMobile]
+	if updated.CookieAT != "new-token" || updated.UserAgent != "existing-agent" || updated.Site != "existing.example.test" || updated.AcceptLanguage != "en-CA" {
+		t.Errorf("updated account did not preserve settings: %#v", updated)
+	}
+	if got := mc.Accounts[other.Mobile].CookieAT; got != "other-token" {
+		t.Errorf("other account token = %q, want other-token", got)
+	}
+}
+
+func TestRunAuthShowDisplaysSelectedAccountAndAccountList(t *testing.T) {
+	isolateAuthSetup(t)
+	first := &config.Config{Mobile: "1111111111", CookieAT: "first-secret-token", Site: "first.example.test"}
+	second := &config.Config{Mobile: "2222222222", CookieAT: "second-secret-token", Site: "second.example.test"}
+	if err := first.Save(); err != nil {
+		t.Fatalf("save first account: %v", err)
+	}
+	if err := second.Save(); err != nil {
+		t.Fatalf("save second account: %v", err)
+	}
+	if err := config.SetDefaultAccount(first.Mobile); err != nil {
+		t.Fatalf("set default account: %v", err)
+	}
+	flagMobile = second.Mobile
+
+	output := captureOutput(t, &os.Stdout, func() {
+		if err := runAuthShow(nil, nil); err != nil {
+			t.Errorf("runAuthShow() error = %v", err)
+		}
+	})
+	for _, want := range []string{
+		"Mobile:                 2222222222 (Active)",
+		"Site:                   second.example.test",
+		"1111111111 (default)",
+		"2222222222 (active)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("auth show output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "Gift cards linked:") {
+		t.Errorf("auth show still displays removed gift-card statistics:\n%s", output)
+	}
+	if strings.Contains(output, "first-secret-token") || strings.Contains(output, "second-secret-token") {
+		t.Errorf("auth show output exposed an access token:\n%s", output)
 	}
 }
 

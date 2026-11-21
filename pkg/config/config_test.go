@@ -23,6 +23,28 @@ func setupTestDir(t *testing.T) string {
 	return dir
 }
 
+func TestSaveMultiConfigUsesSecurePermissions(t *testing.T) {
+	dir := setupTestDir(t)
+	if err := SaveMultiConfig(&MultiConfig{Accounts: map[string]*Config{}}); err != nil {
+		t.Fatalf("SaveMultiConfig() error = %v", err)
+	}
+
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat config directory: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0700 {
+		t.Errorf("config directory permissions = %04o, want 0700", got)
+	}
+	fileInfo, err := os.Stat(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatalf("stat config file: %v", err)
+	}
+	if got := fileInfo.Mode().Perm(); got != 0600 {
+		t.Errorf("config file permissions = %04o, want 0600", got)
+	}
+}
+
 func TestLoadNonExistent(t *testing.T) {
 	setupTestDir(t)
 	_, err := Load()
