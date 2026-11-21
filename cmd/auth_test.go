@@ -132,6 +132,50 @@ func TestRunAuthSetupParsesPipedRequestHeaders(t *testing.T) {
 	}
 }
 
+func TestRunAuthDefaultChangesDefaultAccount(t *testing.T) {
+	isolateAuthSetup(t)
+	first := &config.Config{Mobile: "1111111111", CookieAT: "first"}
+	second := &config.Config{Mobile: "2222222222", CookieAT: "second"}
+	if err := first.Save(); err != nil {
+		t.Fatalf("save first account: %v", err)
+	}
+	if err := second.Save(); err != nil {
+		t.Fatalf("save second account: %v", err)
+	}
+
+	if err := runAuthDefault(nil, []string{"2222222222"}); err != nil {
+		t.Fatalf("runAuthDefault() error = %v", err)
+	}
+	mc, err := config.LoadMultiConfig()
+	if err != nil {
+		t.Fatalf("LoadMultiConfig() error = %v", err)
+	}
+	if mc.DefaultAccount != "2222222222" {
+		t.Errorf("default account = %q, want 2222222222", mc.DefaultAccount)
+	}
+}
+
+func TestRunAuthSetupSiteOverrideAndFingerprintHeaders(t *testing.T) {
+	isolateAuthSetup(t)
+	flagSite = "https://explicit.example.test/"
+	pipeAuthInput(t, "Cookie: at=access\nHost: copied.example.test\nsec-ch-ua: \"Browser\"\nsec-ch-ua-mobile: ?0\nsec-ch-ua-platform: \"macOS\"\n")
+
+	if err := runAuthSetup(nil, nil); err != nil {
+		t.Fatalf("runAuthSetup() error = %v", err)
+	}
+	mc, err := config.LoadMultiConfig()
+	if err != nil {
+		t.Fatalf("LoadMultiConfig() error = %v", err)
+	}
+	cfg := mc.Accounts[flagMobile]
+	if cfg.Site != flagSite || cfg.GetSite() != "explicit.example.test" {
+		t.Errorf("site = %q (normalised %q), want override %q", cfg.Site, cfg.GetSite(), flagSite)
+	}
+	if cfg.SecCHUA != `"Browser"` || cfg.SecCHUAMobile != "?0" || cfg.SecCHUAPlatform != `"macOS"` {
+		t.Errorf("saved client hints = ua:%q mobile:%q platform:%q", cfg.SecCHUA, cfg.SecCHUAMobile, cfg.SecCHUAPlatform)
+	}
+}
+
 func TestRunAuthSetupRejectsMissingCookieAndToken(t *testing.T) {
 	for _, tt := range []struct {
 		name  string

@@ -265,10 +265,10 @@ func verifyGiftcardAdded(cfg *config.Config, cardNumber string, addErr error) er
 					return nil
 				}
 			}
-			return addErr
-		}
-
-		if flagLogHTTP {
+			if flagLogHTTP {
+				infofGrey("gift card %s not found in verification response", cardNumber)
+			}
+		} else if flagLogHTTP {
 			infofGrey("gift card verification failed: %v", err)
 		}
 		if attempt < maxAttempts {

@@ -55,6 +55,34 @@ func setupGiftcardCommand(t *testing.T, transport http.RoundTripper) {
 	}
 }
 
+func captureOutput(t *testing.T, stream **os.File, fn func()) string {
+	t.Helper()
+
+	old := *stream
+	file, err := os.CreateTemp(t.TempDir(), "captured-output")
+	if err != nil {
+		t.Fatalf("create output capture file: %v", err)
+	}
+	*stream = file
+	defer func() {
+		*stream = old
+		_ = file.Close()
+	}()
+
+	fn()
+	if err := file.Sync(); err != nil {
+		t.Fatalf("sync captured output: %v", err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("seek captured output: %v", err)
+	}
+	output, err := io.ReadAll(file)
+	if err != nil {
+		t.Fatalf("read captured output: %v", err)
+	}
+	return string(output)
+}
+
 func responseFor(req *http.Request, status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status,
@@ -98,10 +126,26 @@ func TestRunGiftcardAddHTTPBehavior(t *testing.T) {
 				return responseFor(req, tt.status, tt.body), nil
 			}))
 
-			err := runGiftcardAdd(nil, nil)
+			var err error
+			oldQuiet := quiet
+			quiet = false
+			output := captureOutput(t, &os.Stderr, func() {
+				err = runGiftcardAdd(nil, nil)
+			})
+			quiet = oldQuiet
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("runGiftcardAdd() error = %v", err)
+				}
+				if !strings.Contains(output, "Gift card 6000123456789012 linked successfully") {
+					t.Errorf("success output missing linked confirmation: %q", output)
+				}
+				data, readErr := os.ReadFile(config.ConfigPath())
+				if readErr != nil {
+					t.Fatalf("read saved config: %v", readErr)
+				}
+				if bytes.Contains(data, []byte(`"giftcards"`)) {
+					t.Errorf("saved config still contains gift card history: %s", data)
 				}
 			} else if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("runGiftcardAdd() error = %v, want containing %q", err, tt.wantErr)
@@ -110,6 +154,104 @@ func TestRunGiftcardAddHTTPBehavior(t *testing.T) {
 				t.Error("giftcard add request was not made")
 			}
 		})
+	}
+}
+
+func TestRunGiftcardAddRetriesVerificationAndReportsSuccess(t *testing.T) {
+	attempts := 0
+	setupGiftcardCommand(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodPost {
+			return responseFor(req, http.StatusBadGateway, "gateway error"), nil
+		}
+		attempts++
+		if attempts == 1 {
+			return responseFor(req, http.StatusServiceUnavailable, "temporarily unavailable"), nil
+		}
+		return responseFor(req, http.StatusOK, `{"data":[{"cardNumber":"6000123456789012"}]}`), nil
+	}))
+
+	oldQuiet := quiet
+	quiet = false
+	t.Cleanup(func() { quiet = oldQuiet })
+	var addErr error
+	output := captureOutput(t, &os.Stderr, func() {
+		addErr = runGiftcardAdd(nil, nil)
+	})
+	if addErr != nil {
+		t.Fatalf("runGiftcardAdd() error = %v, want verified success", addErr)
+	}
+	if attempts != 2 {
+		t.Errorf("verification requests = %d, want retry then success (2)", attempts)
+	}
+	if !strings.Contains(output, "Gift card 6000123456789012 linked successfully (verified)") {
+		t.Errorf("stderr does not report verified success: %q", output)
+	}
+}
+
+func TestRunGiftcardAddStopsAfterBoundedVerificationAttempts(t *testing.T) {
+	attempts := 0
+	setupGiftcardCommand(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodPost {
+			return responseFor(req, http.StatusBadGateway, "gateway error"), nil
+		}
+		attempts++
+		return responseFor(req, http.StatusOK, `{"data":[]}`), nil
+	}))
+
+	var addErr error
+	_ = captureOutput(t, &os.Stderr, func() {
+		addErr = runGiftcardAdd(nil, nil)
+	})
+	if addErr == nil || !strings.Contains(addErr.Error(), "API returned HTTP 502") {
+		t.Fatalf("runGiftcardAdd() error = %v, want original link error", addErr)
+	}
+	if attempts != 3 {
+		t.Errorf("verification requests = %d, want bounded maximum of 3", attempts)
+	}
+}
+
+func TestRunGiftcardAddRetriesWhenCardIsNotYetVisible(t *testing.T) {
+	attempts := 0
+	setupGiftcardCommand(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodPost {
+			return responseFor(req, http.StatusBadGateway, "gateway error"), nil
+		}
+		attempts++
+		if attempts == 1 {
+			return responseFor(req, http.StatusOK, `{"data":[]}`), nil
+		}
+		return responseFor(req, http.StatusOK, `{"data":[{"cardNumber":"6000123456789012"}]}`), nil
+	}))
+
+	var addErr error
+	_ = captureOutput(t, &os.Stderr, func() {
+		addErr = runGiftcardAdd(nil, nil)
+	})
+	if addErr != nil {
+		t.Fatalf("runGiftcardAdd() error = %v, want verified success after card appears", addErr)
+	}
+	if attempts != 2 {
+		t.Errorf("verification requests = %d, want retry after card absent on first successful read", attempts)
+	}
+}
+
+func TestPrintGiftcardTableASCIIAndColumns(t *testing.T) {
+	cards := []giftcardInfo{{
+		CardNumber: "123456789012", Balance: 25, OriginalAmount: 50,
+		ExpiryDate: "2030-01-02", Status: "active",
+	}}
+	output := captureOutput(t, &os.Stdout, func() { printGiftcardTable(cards) })
+	if strings.ContainsAny(output, "—–€£₹•─") {
+		t.Errorf("table output contains non-ASCII display characters: %q", output)
+	}
+	for _, want := range []string{
+		"  Card Number   Balance  Original  Expires     Status",
+		"  123456789012       25        50  2030-01-02  active",
+		"        Total       25",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("table output missing %q:\n%s", want, output)
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,19 @@ func TestSaveAndLoadSingle(t *testing.T) {
 	}
 	if loaded.CookieAT != "test-at" {
 		t.Errorf("expected CookieAT 'test-at', got %q", loaded.CookieAT)
+	}
+}
+
+func TestLoadHandlesNilAccounts(t *testing.T) {
+	setupTestDir(t)
+	if err := SaveMultiConfig(&MultiConfig{DefaultAccount: "1234567890"}); err != nil {
+		t.Fatalf("SaveMultiConfig() error = %v", err)
+	}
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), `account for mobile "1234567890" not found`) {
+		t.Fatalf("Load() error = %v, want missing account error", err)
+	}
+	if err := SetDefaultAccount("1234567890"); err == nil || !strings.Contains(err.Error(), `account for mobile "1234567890" not found`) {
+		t.Fatalf("SetDefaultAccount() error = %v, want missing account error", err)
 	}
 }
 
@@ -123,6 +137,38 @@ func TestSaveWithEmptyMobile(t *testing.T) {
 	err := cfg.Save()
 	if err == nil {
 		t.Fatal("expected error saving config with empty mobile, got nil")
+	}
+}
+
+func TestSaveDropsRemovedGiftcardHistoryField(t *testing.T) {
+	dir := setupTestDir(t)
+	legacy := []byte(`{"default_account":"1111111111","accounts":{"1111111111":{"mobile":"1111111111","cookie_at":"token","giftcards":[{"card_number":"1234","pin":"secret"}]}}}`)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), legacy, 0600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() legacy config error = %v", err)
+	}
+	cfg.CookieRT = "refresh"
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() migrated config error = %v", err)
+	}
+
+	saved, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(saved), "giftcards") || strings.Contains(string(saved), "secret") {
+		t.Errorf("saved config retained removed gift card history: %s", saved)
+	}
+	mc, err := LoadMultiConfig()
+	if err != nil {
+		t.Fatalf("LoadMultiConfig() saved config error = %v", err)
+	}
+	if mc.Accounts["1111111111"].CookieAT != "token" || mc.Accounts["1111111111"].CookieRT != "refresh" {
+		t.Errorf("saved account lost credentials: %#v", mc.Accounts["1111111111"])
 	}
 }
 
