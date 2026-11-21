@@ -101,9 +101,7 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 
 	if flagCookieString != "" {
 		hadCookieHeader = true
-		if strings.Contains(flagCookieString, "at=") {
-			hadAT = true
-		}
+		hadAT = hasCookie(flagCookieString, "at")
 		parseCookies(flagCookieString, fkCfg)
 	} else {
 		// Must be piped — refuse to run interactively
@@ -142,9 +140,7 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 			switch key {
 			case "Cookie", "cookie":
 				hadCookieHeader = true
-				if strings.Contains(value, "at=") {
-					hadAT = true
-				}
+				hadAT = hasCookie(value, "at")
 				parseCookies(value, fkCfg)
 			case "User-Agent":
 				fkCfg.UserAgent = value
@@ -213,6 +209,17 @@ func runAuthSetup(cmd *cobra.Command, args []string) error {
 func isRequestLine(line string) bool {
 	for _, method := range []string{"GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "OPTIONS ", "HEAD "} {
 		if strings.HasPrefix(line, method) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasCookie reports whether a semicolon-separated cookie string contains name.
+func hasCookie(cookieStr, name string) bool {
+	for _, pair := range strings.Split(cookieStr, ";") {
+		pairName, _, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if ok && strings.TrimSpace(pairName) == name {
 			return true
 		}
 	}
